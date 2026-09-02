@@ -1,0 +1,50 @@
+name: build-windows
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Build executable
+        run: pyinstaller --noconfirm app.spec
+
+      # TiMini-Print is Apache-2.0. Bundling its prebuilt CLI saves the user a
+      # second download; see THIRD_PARTY.md for attribution.
+      - name: Fetch TiMini-Print CLI
+        run: >
+          gh release download
+          --repo Dejniel/TiMini-Print
+          --pattern "TiMini-Print-Command-Line-Windows-x86_64.exe"
+          --dir "${{ github.workspace }}/dist"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Stage config and docs
+        shell: pwsh
+        run: |
+          Copy-Item config.example.ini dist/config.ini
+          Copy-Item README.md dist/README.md
+          Copy-Item THIRD_PARTY.md dist/THIRD_PARTY.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tiktok-follower-printer-windows
+          path: dist/
+          if-no-files-found: error

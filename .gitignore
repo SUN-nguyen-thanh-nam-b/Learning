@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+build/
+dist/
+*.spec.bak
+
+# Holds the Euler Stream signing key — never commit it.
+config.ini
+
+# Rendered avatars are throwaway output.
+prints/
+
+.DS_Store
