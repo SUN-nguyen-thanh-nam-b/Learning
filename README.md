@@ -1,29 +1,29 @@
 # tiktok-follower-printer
 
-Prints the avatar of everyone who follows you or sends you a gift **during a
-TikTok LIVE**, on a PD-01 mini thermal printer.
+Prints the avatar of everyone who sends you a gift **during a TikTok LIVE**,
+on a PD-01 mini thermal printer.
 
 ```
-TikTokLive ──FollowEvent──▶ avatar URL
-           ──GiftEvent────▶     │
-                                │
-                     download ──▶ square crop, 384 px, gray8
-                                │
-                  queue + dedupe + rate limit
-                                │
-                   TiMini-Print CLI ──BLE──▶ PD-01
+TikTokLive ──GiftEvent──▶ avatar URL
+                             │
+                  download ──▶ square crop, 384 px, greyscale
+                             │
+               queue + dedupe + rate limit + retry
+                             │
+                TiMini-Print CLI ──BLE──▶ PD-01
 ```
 
-Follows print captioned `@handle`. Gifts add a second line with the gift name
-and count, e.g. `Rose x9`. A combo gift prints **once**, when the combo ends --
-TikTok emits one event per tick, and printing mid-combo would produce one slip
-per rose. Each viewer prints at most once per session *per reason*, so someone
-who follows and later sends a gift gets both.
+Each slip carries the avatar, the `@handle`, and the gift name and count, e.g.
+`Rose x9`. A combo gift prints **once**, when the combo ends -- TikTok emits one
+event per tick, and printing mid-combo would produce one slip per rose. Each
+gifter prints at most once per session.
 
 ## Hard limits — read these first
 
-- **Only works while you are live.** Follow events arrive on the live room's
-  event stream. Anyone who follows you while you are offline produces nothing.
+- **Only works while you are live.** Gift events arrive on the live room's
+  event stream. Nothing reaches the app while you are offline.
+- **Wake the printer before you start.** It sleeps after a few idle minutes and
+  stops advertising over BLE, which makes discovery fail.
 - **TikTokLive is unofficial.** It reverse-engineers TikTok's webcast protocol
   and can break without warning.
 - **BLE holds one connection.** Disconnect the printer from your phone and
@@ -59,8 +59,8 @@ See `config.example.ini` — every key is commented. The settings worth tuning:
 |---|---|
 | `max_per_minute` | Hard cap on prints. Protects paper and the print head during a viral moment. |
 | `queue_max` | Jobs past this are dropped rather than backing up. |
-| `dedupe` | Print each viewer at most once per session, per reason. |
-| `print_gifts` | Set to `false` to print follows only. |
+| `dedupe` | Print each gifter at most once per session. |
+| `retries` | Extra attempts when a print fails. The printer sleeps after a few idle minutes; gift events never repeat. |
 | `darkness` | Passed to the TiMini-Print CLI. Raise it if prints look faint. |
 | `sign_api_key` | Euler Stream key. Only needed if the free tier rate-limits you. |
 
@@ -98,7 +98,7 @@ python run_app.py
 | File | Role |
 |---|---|
 | `app/main.py` | CLI parsing and wiring |
-| `app/tiktok_listener.py` | TikTokLive connection, follow/gift events, reconnect loop |
+| `app/tiktok_listener.py` | TikTokLive connection, gift events, reconnect loop |
 | `app/avatar_renderer.py` | download, square crop, scale, caption |
 | `app/print_worker.py` | queue, dedupe, rate limit, background thread |
 | `app/printer_client.py` | subprocess wrapper around the TiMini-Print CLI |

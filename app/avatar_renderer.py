@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 import httpx
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageFont, ImageOps, UnidentifiedImageError
 
 # Tried in order for the caption. Segoe UI ships with Windows and has the
 # widest Unicode coverage; the PIL bitmap font is the last resort.
@@ -15,6 +15,10 @@ _CAPTION_FONTS = ("segoeui.ttf", "arial.ttf", "DejaVuSans.ttf")
 
 _LINE_GAP = 6
 _CAPTION_PADDING = 10
+
+
+class RenderError(RuntimeError):
+    """Raised when the downloaded bytes are not a usable image."""
 
 
 def _load_font(size: int):
@@ -47,10 +51,17 @@ def render(
 ) -> Path:
     """Square-crop the avatar, scale it to the printer's dot width, caption it.
 
-    The PD-01 profile accepts gray8, so the image stays greyscale rather than
-    being dithered to 1-bit. autocontrast stops mid-tones printing as mud.
+    The image is left greyscale: TiMini-Print rasterises to 1-bit itself and
+    applies Atkinson dithering, so pre-thresholding here would only throw
+    away tones it needs. autocontrast widens the range it has to work with.
     """
-    avatar = Image.open(io.BytesIO(avatar_bytes)).convert("RGB")
+    try:
+        avatar = Image.open(io.BytesIO(avatar_bytes)).convert("RGB")
+    except (UnidentifiedImageError, OSError) as exc:
+        raise RenderError(
+            f"not a readable image ({len(avatar_bytes)} bytes) -- a truncated "
+            "download or an error page saved as an image will do this"
+        ) from exc
     avatar = _center_square(avatar).resize((width_px, width_px), Image.LANCZOS)
     avatar = ImageOps.autocontrast(avatar.convert("L"))
 

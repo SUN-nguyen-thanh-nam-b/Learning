@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from . import app_config, avatar_renderer, tiktok_listener
+from .avatar_renderer import RenderError
 from .paths import resolve
 from .print_worker import PrintWorker
 from .printer_client import PrinterClient, PrinterError
@@ -27,7 +28,7 @@ def _configure_logging(verbose: bool) -> None:
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="tiktok-follower-printer",
-        description="Print the avatar of everyone who follows your TikTok LIVE.",
+        description="Print the avatar of everyone who sends a gift on your TikTok LIVE.",
     )
     parser.add_argument("--config", type=Path, help="path to config.ini")
     parser.add_argument(
@@ -81,12 +82,16 @@ def main() -> int:
         if not args.test_print.exists():
             log.error("no such image: %s", args.test_print)
             return 2
-        image = avatar_renderer.render(
-            args.test_print.read_bytes(),
-            resolve(config.save_dir) / "test-print.png",
-            width_px=config.width_px,
-            caption_lines=["@test"] if config.show_username else [],
-        )
+        try:
+            image = avatar_renderer.render(
+                args.test_print.read_bytes(),
+                resolve(config.save_dir) / "test-print.png",
+                width_px=config.width_px,
+                caption_lines=["@test"] if config.show_username else [],
+            )
+        except RenderError as exc:
+            log.error("%s: %s", args.test_print, exc)
+            return 2
         try:
             printer.print_image(image)
         except PrinterError as exc:
@@ -111,19 +116,17 @@ def main() -> int:
         queue_max=config.queue_max,
         dedupe=config.dedupe,
         show_username=config.show_username,
+        retries=config.retries,
     )
     worker.start()
     log.info(
-        "watching @%s (%s) -- printing to '%s'",
+        "watching @%s for gifts -- printing to '%s'",
         config.username,
-        "follows + gifts" if config.print_gifts else "follows only",
         config.bluetooth_name or "first printer found",
     )
 
     try:
-        tiktok_listener.run_forever(
-            config.username, worker.submit, print_gifts=config.print_gifts
-        )
+        tiktok_listener.run_forever(config.username, worker.submit)
     except KeyboardInterrupt:
         log.info("stopping")
     finally:

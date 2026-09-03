@@ -1,4 +1,4 @@
-"""Listen for follow and gift events on a TikTok LIVE room."""
+"""Listen for gift events on a TikTok LIVE room."""
 
 from __future__ import annotations
 
@@ -7,12 +7,7 @@ import time
 from typing import Callable
 
 from TikTokLive import TikTokLiveClient
-from TikTokLive.events import (
-    ConnectEvent,
-    DisconnectEvent,
-    FollowEvent,
-    GiftEvent,
-)
+from TikTokLive.events import ConnectEvent, DisconnectEvent, GiftEvent
 
 from .print_worker import PrintJob
 
@@ -31,14 +26,13 @@ def _avatar_url(user) -> str:
     return ""
 
 
-def _to_job(user, reason: str, detail: str = "") -> PrintJob | None:
+def _to_job(user, detail: str) -> PrintJob | None:
     if user is None:
         return None
     return PrintJob(
         user_id=user.id_str or str(user.id),
         handle=user.display_id or user.nickname or "unknown",
         avatar_url=_avatar_url(user),
-        reason=reason,
         detail=detail,
     )
 
@@ -49,11 +43,7 @@ def _gift_detail(event: GiftEvent) -> str:
     return f"{name} x{count}" if count > 1 else name
 
 
-def _build_client(
-    username: str,
-    on_job: Callable[[PrintJob], None],
-    print_gifts: bool,
-):
+def _build_client(username: str, on_job: Callable[[PrintJob], None]):
     client = TikTokLiveClient(unique_id=username)
 
     @client.on(ConnectEvent)
@@ -64,17 +54,6 @@ def _build_client(
     async def _on_disconnect(event) -> None:  # noqa: ANN001
         log.warning("disconnected from @%s's live room", username)
 
-    @client.on(FollowEvent)
-    async def _on_follow(event) -> None:  # noqa: ANN001
-        job = _to_job(event.user, "follow")
-        if job is None:
-            log.warning("follow event carried no user")
-            return
-        on_job(job)
-
-    if not print_gifts:
-        return client
-
     @client.on(GiftEvent)
     async def _on_gift(event) -> None:  # noqa: ANN001
         # TikTok emits one event per tick of a combo gift. Only the closing
@@ -82,7 +61,7 @@ def _build_client(
         # printing mid-streak would spit out one slip per rose.
         if event.streaking:
             return
-        job = _to_job(event.user, "gift", _gift_detail(event))
+        job = _to_job(event.user, _gift_detail(event))
         if job is None:
             log.warning("gift event carried no user")
             return
@@ -94,7 +73,6 @@ def _build_client(
 def run_forever(
     username: str,
     on_job: Callable[[PrintJob], None],
-    print_gifts: bool = True,
     reconnect_delay: float = 15.0,
 ) -> None:
     """Stay connected for the whole stream, reconnecting when it drops.
@@ -105,7 +83,7 @@ def run_forever(
     attempt because a disconnected one is not reusable.
     """
     while True:
-        client = _build_client(username, on_job, print_gifts)
+        client = _build_client(username, on_job)
         try:
             client.run()
         except KeyboardInterrupt:

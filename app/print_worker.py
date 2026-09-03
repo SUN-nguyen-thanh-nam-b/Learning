@@ -24,15 +24,8 @@ class PrintJob:
     user_id: str
     handle: str
     avatar_url: str
-    # Why this person is being printed: "follow" or "gift". Dedupe is scoped
-    # per reason, so a viewer who follows and later sends a gift gets both.
-    reason: str = "follow"
-    # Optional second caption line, e.g. "Rose x5".
+    # Second caption line naming the gift, e.g. "Rose x5".
     detail: str = ""
-
-    @property
-    def dedupe_key(self) -> str:
-        return f"{self.reason}:{self.user_id}"
 
 
 class PrintWorker:
@@ -53,6 +46,8 @@ class PrintWorker:
         queue_max: int = 20,
         dedupe: bool = True,
         show_username: bool = True,
+        retries: int = 2,
+        retry_delay: float = 5.0,
     ) -> None:
         self._printer = printer
         self._save_dir = save_dir
@@ -60,6 +55,8 @@ class PrintWorker:
         self._max_per_minute = max_per_minute
         self._dedupe = dedupe
         self._show_username = show_username
+        self._retries = max(retries, 0)
+        self._retry_delay = retry_delay
 
         self._queue: queue.Queue = queue.Queue(maxsize=queue_max)
         self._seen: set[str] = set()
@@ -77,9 +74,8 @@ class PrintWorker:
 
     def submit(self, job: PrintJob) -> None:
         """Queue a print job. Safe to call from the asyncio event loop."""
-        if self._dedupe and job.dedupe_key in self._seen:
-            log.info("skip @%s %s (already printed this session)",
-                     job.handle, job.reason)
+        if self._dedupe and job.user_id in self._seen:
+            log.info("skip @%s (already printed this session)", job.handle)
             return
         if not job.avatar_url:
             log.warning("skip @%s (no avatar URL in event)", job.handle)
@@ -91,9 +87,9 @@ class PrintWorker:
             log.warning("queue full, dropped @%s", job.handle)
             return
 
-        self._seen.add(job.dedupe_key)
-        log.info("queued @%s (%s, %d waiting)",
-                 job.handle, job.reason, self._queue.qsize())
+        self._seen.add(job.user_id)
+        log.info("queued @%s -- %s (%d waiting)",
+                 job.handle, job.detail or "gift", self._queue.qsize())
 
     def _throttle(self) -> None:
         """Block until printing another job stays under the per-minute cap."""
@@ -106,6 +102,35 @@ class PrintWorker:
             wait = 60.0 - (now - self._recent_prints[0])
             log.info("rate limit reached, waiting %.0fs", wait)
             time.sleep(max(wait, 0.0))
+
+    def _print_with_retries(self, job: PrintJob, image: Path) -> bool:
+        """Print, retrying a few times before giving up on this gift.
+
+        The printer sleeps after a few idle minutes and stops advertising over
+        BLE, which makes discovery fail. Gift events never repeat, so a single
+        failed attempt would lose that person's slip for good.
+        """
+        attempts = self._retries + 1
+        for attempt in range(1, attempts + 1):
+            try:
+                self._printer.print_image(image)
+                return True
+            except PrinterError as exc:
+                if attempt == attempts:
+                    # Nothing came out; drop the dedupe entry so a later event
+                    # from the same person still has a chance.
+                    self._seen.discard(job.user_id)
+                    log.error(
+                        "gave up on @%s after %d attempt(s): %s",
+                        job.handle, attempts, exc,
+                    )
+                    return False
+                log.warning(
+                    "print attempt %d/%d for @%s failed (%s); retrying in %.0fs",
+                    attempt, attempts, job.handle, exc, self._retry_delay,
+                )
+                time.sleep(self._retry_delay)
+        return False
 
     def _loop(self) -> None:
         while True:
@@ -127,7 +152,7 @@ class PrintWorker:
             captions.append(job.detail)
 
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        out_path = self._save_dir / f"{stamp}-{job.reason}-{job.handle}.png"
+        out_path = self._save_dir / f"{stamp}-{job.handle}.png"
         image = avatar_renderer.render(
             avatar_renderer.download(job.avatar_url),
             out_path,
@@ -136,13 +161,7 @@ class PrintWorker:
         )
 
         started = time.monotonic()
-        try:
-            self._printer.print_image(image)
-        except PrinterError as exc:
-            # Nothing came out, so forget the dedupe entry -- TikTok re-sends
-            # follow events often enough that a retry is worth allowing.
-            self._seen.discard(job.dedupe_key)
-            log.error("printer refused @%s: %s", job.handle, exc)
+        if not self._print_with_retries(job, image):
             return
 
         self._recent_prints.append(time.monotonic())

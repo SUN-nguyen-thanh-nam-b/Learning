@@ -24,7 +24,7 @@ class Config:
     queue_max: int
     dedupe: bool
     show_username: bool
-    print_gifts: bool
+    retries: int
     save_dir: str
 
 
@@ -42,7 +42,7 @@ _DEFAULTS: dict[str, dict[str, str]] = {
         "queue_max": "20",
         "dedupe": "true",
         "show_username": "true",
-        "print_gifts": "true",
+        "retries": "2",
     },
     "app": {"save_dir": "prints"},
 }
@@ -72,6 +72,6 @@ def load(path: Path | None = None) -> Config:
         queue_max=parser.getint("print", "queue_max"),
         dedupe=parser.getboolean("print", "dedupe"),
         show_username=parser.getboolean("print", "show_username"),
-        print_gifts=parser.getboolean("print", "print_gifts"),
+        retries=parser.getint("print", "retries"),
         save_dir=parser.get("app", "save_dir").strip(),
     )
