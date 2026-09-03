@@ -26,14 +26,19 @@ def _avatar_url(user) -> str:
     return ""
 
 
-def _to_job(user, detail: str) -> PrintJob | None:
+def _to_job(user, detail: str, group_id: int = 0) -> PrintJob | None:
     if user is None:
         return None
+    user_id = user.id_str or str(user.id)
+    # group_id identifies one gift or combo. Distinct combos carry distinct
+    # values, so keying on it lets a second gift print while still catching a
+    # redelivered event. It is 0 when TikTok omits it -- then we do not dedupe.
     return PrintJob(
-        user_id=user.id_str or str(user.id),
+        user_id=user_id,
         handle=user.display_id or user.nickname or "unknown",
         avatar_url=_avatar_url(user),
         detail=detail,
+        dedupe_key=f"{user_id}:{group_id}" if group_id else "",
     )
 
 
@@ -61,7 +66,7 @@ def _build_client(username: str, on_job: Callable[[PrintJob], None]):
         # printing mid-streak would spit out one slip per rose.
         if event.streaking:
             return
-        job = _to_job(event.user, _gift_detail(event))
+        job = _to_job(event.user, _gift_detail(event), event.group_id)
         if job is None:
             log.warning("gift event carried no user")
             return

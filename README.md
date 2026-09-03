@@ -15,8 +15,8 @@ TikTokLive ──GiftEvent──▶ avatar URL
 
 Each slip carries the avatar, the `@handle`, and the gift name and count, e.g.
 `Rose x9`. A combo gift prints **once**, when the combo ends -- TikTok emits one
-event per tick, and printing mid-combo would produce one slip per rose. Each
-gifter prints at most once per session.
+event per tick, and printing mid-combo would produce one slip per rose. Every
+separate gift prints, including repeat gifts from the same person.
 
 ## Hard limits — read these first
 
@@ -59,7 +59,7 @@ See `config.example.ini` — every key is commented. The settings worth tuning:
 |---|---|
 | `max_per_minute` | Hard cap on prints. Protects paper and the print head during a viral moment. |
 | `queue_max` | Jobs past this are dropped rather than backing up. |
-| `dedupe` | Print each gifter at most once per session. |
+| `dedupe` | Suppress the same gift event arriving twice. Does **not** limit a person to one slip. |
 | `retries` | Extra attempts when a print fails. The printer sleeps after a few idle minutes; gift events never repeat. |
 | `darkness` | Passed to the TiMini-Print CLI. Raise it if prints look faint. |
 | `sign_api_key` | Euler Stream key. Only needed if the free tier rate-limits you. |

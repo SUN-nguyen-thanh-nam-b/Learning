@@ -26,10 +26,17 @@ class PrintJob:
     avatar_url: str
     # Second caption line naming the gift, e.g. "Rose x5".
     detail: str = ""
+    # Identifies this specific gift so a redelivered event does not print
+    # twice. Empty means "cannot tell them apart" -- print it regardless,
+    # because losing a gift is worse than printing one twice.
+    dedupe_key: str = ""
 
 
 class PrintWorker:
     """Consumes :class:`PrintJob` items on one background thread.
+
+    Every gift gets its own slip; dedupe only suppresses the same gift event
+    arriving twice, never a second gift from the same person.
 
     BLE allows a single connection to the printer, so jobs must print strictly
     one at a time. Bursts are absorbed by the queue and shed once it is full,
@@ -74,8 +81,9 @@ class PrintWorker:
 
     def submit(self, job: PrintJob) -> None:
         """Queue a print job. Safe to call from the asyncio event loop."""
-        if self._dedupe and job.user_id in self._seen:
-            log.info("skip @%s (already printed this session)", job.handle)
+        if self._dedupe and job.dedupe_key and job.dedupe_key in self._seen:
+            log.info("skip @%s -- %s (same gift already printed)",
+                     job.handle, job.detail or "gift")
             return
         if not job.avatar_url:
             log.warning("skip @%s (no avatar URL in event)", job.handle)
@@ -87,9 +95,11 @@ class PrintWorker:
             log.warning("queue full, dropped @%s", job.handle)
             return
 
-        self._seen.add(job.user_id)
-        log.info("queued @%s -- %s (%d waiting)",
-                 job.handle, job.detail or "gift", self._queue.qsize())
+        if job.dedupe_key:
+            self._seen.add(job.dedupe_key)
+        log.info("queued @%s -- %s (%d waiting) [%s]",
+                 job.handle, job.detail or "gift", self._queue.qsize(),
+                 job.dedupe_key or "no-dedupe-key")
 
     def _throttle(self) -> None:
         """Block until printing another job stays under the per-minute cap."""
@@ -119,7 +129,7 @@ class PrintWorker:
                 if attempt == attempts:
                     # Nothing came out; drop the dedupe entry so a later event
                     # from the same person still has a chance.
-                    self._seen.discard(job.user_id)
+                    self._seen.discard(job.dedupe_key)
                     log.error(
                         "gave up on @%s after %d attempt(s): %s",
                         job.handle, attempts, exc,
@@ -151,7 +161,9 @@ class PrintWorker:
         if job.detail:
             captions.append(job.detail)
 
-        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        # Milliseconds, because two gifts can land inside the same second
+        # and would otherwise overwrite each other in the archive.
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")[:-3]
         out_path = self._save_dir / f"{stamp}-{job.handle}.png"
         image = avatar_renderer.render(
             avatar_renderer.download(job.avatar_url),
