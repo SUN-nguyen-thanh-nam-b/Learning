@@ -48,8 +48,15 @@ def render(
     out_path: Path,
     width_px: int = 384,
     caption_lines: Sequence[str] = (),
+    avatar_scale: float = 1.0,
 ) -> Path:
-    """Square-crop the avatar, scale it to the printer's dot width, caption it.
+    """Square-crop the avatar, lay it on a paper-width canvas, caption it.
+
+    The canvas is always ``width_px`` wide -- the printer's dot width -- because
+    TiMini-Print rescales whatever it is given to exactly that. Printing the
+    avatar smaller therefore means shrinking it *inside* the canvas and letting
+    white padding fill the rest, which only survives if the caller also passes
+    ``--no-trim-side-margins`` to the CLI.
 
     The image is left greyscale: TiMini-Print rasterises to 1-bit itself and
     applies Atkinson dithering, so pre-thresholding here would only throw
@@ -62,20 +69,21 @@ def render(
             f"not a readable image ({len(avatar_bytes)} bytes) -- a truncated "
             "download or an error page saved as an image will do this"
         ) from exc
-    avatar = _center_square(avatar).resize((width_px, width_px), Image.LANCZOS)
+    avatar_px = max(8, min(width_px, round(width_px * avatar_scale)))
+    avatar = _center_square(avatar).resize((avatar_px, avatar_px), Image.LANCZOS)
     avatar = ImageOps.autocontrast(avatar.convert("L"))
 
     lines = [line for line in caption_lines if line]
-    font = _load_font(max(16, width_px // 14)) if lines else None
+    font = _load_font(max(12, avatar_px // 14)) if lines else None
     line_height = (font.size + _LINE_GAP) if font else 0
     caption_height = (len(lines) * line_height + _CAPTION_PADDING) if lines else 0
 
-    canvas = Image.new("L", (width_px, width_px + caption_height), color=255)
-    canvas.paste(avatar, (0, 0))
+    canvas = Image.new("L", (width_px, avatar_px + caption_height), color=255)
+    canvas.paste(avatar, ((width_px - avatar_px) // 2, 0))
 
     if font is not None:
         draw = ImageDraw.Draw(canvas)
-        y = width_px + _CAPTION_PADDING // 2
+        y = avatar_px + _CAPTION_PADDING // 2
         for line in lines:
             box = draw.textbbox((0, 0), line, font=font)
             x = max(0, (width_px - (box[2] - box[0])) // 2)

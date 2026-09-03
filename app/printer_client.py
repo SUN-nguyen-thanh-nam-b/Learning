@@ -24,12 +24,14 @@ class PrinterClient:
         darkness: str = "",
         extra_args: str = "",
         timeout: float = 120.0,
+        preserve_margins: bool = False,
     ) -> None:
         self._exe = exe_path
         self._bluetooth = bluetooth_name
         self._darkness = darkness
         self._extra = shlex.split(extra_args) if extra_args else []
         self._timeout = timeout
+        self._preserve_margins = preserve_margins
 
     def _base_cmd(self) -> list[str]:
         if not self._exe.exists():
@@ -50,6 +52,10 @@ class PrinterClient:
             cmd += ["--bluetooth", self._bluetooth]
         if self._darkness:
             cmd += ["--darkness", self._darkness]
+        if self._preserve_margins:
+            # Without this the CLI crops the white padding that makes a
+            # scaled-down avatar smaller, then rescales back to full width.
+            cmd.append("--no-trim-side-margins")
         cmd += self._extra
         cmd.append(str(image_path))
         return self._run(cmd)

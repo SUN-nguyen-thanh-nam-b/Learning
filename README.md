@@ -59,6 +59,7 @@ See `config.example.ini` — every key is commented. The settings worth tuning:
 |---|---|
 | `max_per_minute` | Hard cap on prints. Protects paper and the print head during a viral moment. |
 | `queue_max` | Jobs past this are dropped rather than backing up. |
+| `avatar_scale` | How much of the 48 mm paper width the avatar fills, `0.2`-`1.0`. Lower prints smaller and shortens each slip. |
 | `dedupe` | Suppress the same gift event arriving twice. Does **not** limit a person to one slip. |
 | `retries` | Extra attempts when a print fails. The printer sleeps after a few idle minutes; gift events never repeat. |
 | `darkness` | Passed to the TiMini-Print CLI. Raise it if prints look faint. |

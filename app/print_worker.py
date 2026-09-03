@@ -49,6 +49,7 @@ class PrintWorker:
         printer: PrinterClient,
         save_dir: Path,
         width_px: int = 384,
+        avatar_scale: float = 1.0,
         max_per_minute: int = 6,
         queue_max: int = 20,
         dedupe: bool = True,
@@ -59,6 +60,7 @@ class PrintWorker:
         self._printer = printer
         self._save_dir = save_dir
         self._width_px = width_px
+        self._avatar_scale = avatar_scale
         self._max_per_minute = max_per_minute
         self._dedupe = dedupe
         self._show_username = show_username
@@ -170,6 +172,7 @@ class PrintWorker:
             out_path,
             width_px=self._width_px,
             caption_lines=captions,
+            avatar_scale=self._avatar_scale,
         )
 
         started = time.monotonic()

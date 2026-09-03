@@ -50,6 +50,8 @@ def _build_printer(config: app_config.Config) -> PrinterClient:
         bluetooth_name=config.bluetooth_name,
         darkness=config.darkness,
         extra_args=config.extra_args,
+        # Padding only survives the CLI's auto-crop if trimming is off.
+        preserve_margins=config.avatar_scale < 1.0,
     )
 
 
@@ -88,6 +90,7 @@ def main() -> int:
                 resolve(config.save_dir) / "test-print.png",
                 width_px=config.width_px,
                 caption_lines=["@test"] if config.show_username else [],
+                avatar_scale=config.avatar_scale,
             )
         except RenderError as exc:
             log.error("%s: %s", args.test_print, exc)
@@ -112,6 +115,7 @@ def main() -> int:
         printer=printer,
         save_dir=resolve(config.save_dir),
         width_px=config.width_px,
+        avatar_scale=config.avatar_scale,
         max_per_minute=config.max_per_minute,
         queue_max=config.queue_max,
         dedupe=config.dedupe,
